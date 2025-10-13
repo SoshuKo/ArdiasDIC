@@ -264,7 +264,25 @@ function render(rows) {
 }
 
 function escapeHtml(s) {
-  return (s ?? '').replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"})[m]);
+  return (s ?? '').replace(/[&<>"']/g, m => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}
+
+// === 日本語・ラテン表記 正規化（日本語検索対応） ===
+function toHiragana(s) {
+  // 全角カタカナ → ひらがな
+  return String(s || "").replace(/[ァ-ン]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60));
+}
+function normJa(s, cs) {
+  // 未定義安全化 → NFKC → カタカナ→ひらがな →（必要に応じ）lower
+  let t = String(s ?? '').normalize('NFKC');
+  t = toHiragana(t);
+  return cs ? t : t.toLowerCase();
+}
+function normLat(s, cs) {
+  let t = String(s ?? '').normalize('NFKC');
+  return cs ? t : t.toLowerCase();
+}
+
+)[m]);
 }
 
 function search() {
@@ -277,17 +295,19 @@ function search() {
   let filtered = DATA.slice();
   if (mode !== 'all' && q !== "") {
     try {
-      const src = cs ? q : q.toLowerCase();
+      const srcLat = normLat(q, cs);
+      const srcJa  = normJa(q, cs);
       if (mode === 'regex') {
         const re = new RegExp(q, cs ? '' : 'i');
-        filtered = filtered.filter(r => re.test(r.lat));
-      } else {
+        filtered = filtered.filter(r => re.test(String(r.lat ?? "")) || re.test(String(r.ja ?? "")));} else {
         filtered = filtered.filter(r => {
-          const s = cs ? r.lat : (r.lat || '').toLowerCase();
-          if (mode === 'prefix') return s.startsWith(src);
-          if (mode === 'suffix') return s.endsWith(src);
-          if (mode === 'partial') return s.includes(src);
-          if (mode === 'exact') return s === src;
+          const sLat = normLat(r.lat, cs);
+          const sJa  = normJa(r.ja,  cs);
+          const hit = (fn) => fn(sLat, srcLat) || fn(sJa, srcJa);
+          if (mode === 'prefix') return hit((a,b)=>a.startsWith(b));
+          if (mode === 'suffix') return hit((a,b)=>a.endsWith(b));
+          if (mode === 'partial') return hit((a,b)=>a.includes(b));
+          if (mode === 'exact')   return hit((a,b)=>a === b);
           return true;
         });
       }
